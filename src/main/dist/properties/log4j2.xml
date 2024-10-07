@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+        </Console>
+
+        <RollingFile name="detail" append="true" fileName="logs/detail.log" filePattern="logs/detail.log.%d{yyyy-MM}">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %p [%c] - %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1"/><!-- 1 month roll over -->
+            </Policies>
+        </RollingFile>
+        <RollingFile name="status" append="true" fileName="logs/status.log" filePattern="logs/status.log.%d{yyyy-MM}">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %p [%c] - %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+        </RollingFile>
+        <File name="summary" append="false" fileName="logs/summary.log">
+            <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
+        </File>
+    </Appenders>
+
+    <Loggers>
+        <Root level="INFO">
+            <AppenderRef ref="Console"/>
+        </Root>
+        <Logger name="status" level="debug" additivity="false">
+            <AppenderRef ref="detail"/>
+            <AppenderRef ref="status" level="info"/>
+            <AppenderRef ref="summary" level="info"/>
+            <AppenderRef ref="Console" level="info"/>
+        </Logger>
+    </Loggers>
+</Configuration>

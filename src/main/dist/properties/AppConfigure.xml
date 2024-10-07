@@ -1,0 +1,25 @@
+<!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN//EN" "http://www.springframework.org/dtd/spring-beans.dtd">
+<beans>
+    <bean id="main" class="edu.mcw.rgd.expressionValueCount.Main">
+        <property name="version" value="Calculate Gene Expression Value Counts -- build 10/04/2024"/>
+        <property name="species">
+            <map>
+                <entry key="1" value="Human"/>
+<!--                <entry key="2" value="Mouse"/>-->
+                <entry key="3" value="Rat"/>
+                <entry key="6" value="Dog"/>
+                <entry key="9" value="Pig"/>
+                <entry key="13" value="Green Monkey"/>
+            </map>
+        </property>
+        <property name="expressionLevels">
+            <list>
+<!--                <value>below cutoff</value>-->
+<!--                <value>low</value>-->
+<!--                <value>medium</value>-->
+<!--                <value>high</value>-->
+                <value>all</value>
+            </list>
+        </property>
+    </bean>
+</beans>
