@@ -95,6 +95,7 @@ public class Main {
                         gvc = new GeneExpressionValueCount();
                         gvc.setValueCnt(cnt);
                         gvc.setExpressedRgdId(geneRgdId);
+                        gvc.setTermAcc(term);
                         gvc.setUnit("TPM");
                         gvc.setLevel(level);
                         newValueCounts.add(gvc);
