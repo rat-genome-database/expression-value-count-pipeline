@@ -24,7 +24,7 @@ public class Main {
     private Map<Integer,String> species;
     private List<String> expressionLevels;
     protected Logger logger = LogManager.getLogger("status");
-    private DAO dao = new DAO();
+    private final DAO dao = new DAO();
 
 
     public static void main(String[] args) throws Exception {
@@ -78,36 +78,42 @@ public class Main {
         // loop through terms and start getting counts and insert them
         for (Gene g : activeGenes){
             int geneRgdId = g.getRgdId();
-            for (String term : terms){
-                for (String level : expressionLevels){
-                    // check if row exists, if yes, update value and last modified
-                    // else create row and add to list
-                    int cnt = 0;
-                    switch (level) {
-                        case "below cutoff", "low", "medium", "high" ->
-                                cnt = dao.getGeneExprRecordValuesCountForGeneBySlim(geneRgdId, term, "TPM", level);
-                        case "all" -> cnt = dao.getGeneExprRecordValuesCountForGene(geneRgdId, term, "TPM");
+            terms.parallelStream().forEach( term -> {
+
+                try {
+                    for (String level : expressionLevels) {
+                        // check if row exists, if yes, update value and last modified
+                        // else create row and add to list
+                        int cnt = 0;
+                        switch (level) {
+                            case "below cutoff", "low", "medium", "high" -> cnt = dao.getGeneExprRecordValuesCountForGeneBySlim(geneRgdId, term, "TPM", level);
+                            case "all" -> cnt = dao.getGeneExprRecordValuesCountForGene(geneRgdId, term, "TPM");
+                        }
+                        if (cnt == 0)
+                            continue;
+                        GeneExpressionValueCount gvc = dao.getValueCountsByGeneRgdIdTermUnitAndLevel(geneRgdId, term, "TPM", level);
+
+                        synchronized (dao) {
+                            if (gvc == null) {
+                                gvc = new GeneExpressionValueCount();
+                                gvc.setValueCnt(cnt);
+                                gvc.setExpressedRgdId(geneRgdId);
+                                gvc.setTermAcc(term);
+                                gvc.setUnit("TPM");
+                                gvc.setLevel(level);
+                                newValueCounts.add(gvc);
+                            } else if (gvc.getValueCnt() != cnt) {
+                                updateValueCounts.add(gvc);
+                            } else {
+                                updateLastModified.add(gvc);
+                            }
+                        }
                     }
-                    if (cnt==0)
-                        continue;
-                    GeneExpressionValueCount gvc = dao.getValueCountsByGeneRgdIdTermUnitAndLevel(geneRgdId,term,"TPM",level);
-                    if (gvc == null){
-                        gvc = new GeneExpressionValueCount();
-                        gvc.setValueCnt(cnt);
-                        gvc.setExpressedRgdId(geneRgdId);
-                        gvc.setTermAcc(term);
-                        gvc.setUnit("TPM");
-                        gvc.setLevel(level);
-                        newValueCounts.add(gvc);
-                    }
-                    else if (gvc.getValueCnt()!=cnt){
-                        updateValueCounts.add(gvc);
-                    }
-                    else {
-                        updateLastModified.add(gvc);
-                    }
+                }catch (Exception e){
+                    throw new RuntimeException(e);
                 }
-            } // end terms for
+            });
+
         } // end gene for
         if (!newValueCounts.isEmpty()){
             logger.info("\t\tNew Counts for Expression Values: "+newValueCounts.size());
