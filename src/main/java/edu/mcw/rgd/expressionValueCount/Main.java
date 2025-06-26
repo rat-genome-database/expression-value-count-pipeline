@@ -103,6 +103,7 @@ public class Main {
                                 gvc.setLevel(level);
                                 newValueCounts.add(gvc);
                             } else if (gvc.getValueCnt() != cnt) {
+                                gvc.setValueCnt(cnt);
                                 updateValueCounts.add(gvc);
                             } else {
                                 updateLastModified.add(gvc);
