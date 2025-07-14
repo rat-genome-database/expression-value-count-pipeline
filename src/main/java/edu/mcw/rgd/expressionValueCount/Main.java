@@ -85,10 +85,25 @@ public class Main {
                         // check if row exists, if yes, update value and last modified
                         // else create row and add to list
                         int cnt = 0;
-                        switch (level) {
-                            case "below cutoff", "low", "medium", "high" -> cnt = dao.getGeneExprRecordValuesCountForGeneBySlim(geneRgdId, term, "TPM", level);
-                            case "all" -> cnt = dao.getGeneExprRecordValuesCountForGene(geneRgdId, term, "TPM");
+                        int attempt=0;
+                        while( attempt < 5) {
+                            try {
+                                switch (level) {
+                                    case "below cutoff", "low", "medium", "high" -> cnt = dao.getGeneExprRecordValuesCountForGeneBySlim(geneRgdId, term, "TPM", level);
+                                    case "all" -> cnt = dao.getGeneExprRecordValuesCountForGene(geneRgdId, term, "TPM");
+                                }
+                                break;
+                            } catch (org.springframework.jdbc.CannotGetJdbcConnectionException exception) {
+                                logger.warn(geneRgdId+"|"+term+"|TPM|"+level);
+                                logger.warn(exception.getMessage());
+                                Thread.sleep(5000);
+                                attempt++;
+                                if (attempt==5){
+                                    throw exception;
+                                }
+                            }
                         }
+
                         if (cnt == 0)
                             continue;
                         GeneExpressionValueCount gvc = dao.getValueCountsByGeneRgdIdTermUnitAndLevel(geneRgdId, term, "TPM", level);

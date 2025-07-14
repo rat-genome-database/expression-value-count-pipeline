@@ -1,3 +1,6 @@
+7/14/2025
+ adding an update for the "Failed to obtain JDBC Connection" error that is causing a timeout, "Timeout waiting for idle object"
+
 10/14/2024
 updating to run a parallelStream for uberon terms
 
