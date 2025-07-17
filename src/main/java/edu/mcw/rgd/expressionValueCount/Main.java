@@ -75,9 +75,12 @@ public class Main {
         List<GeneExpressionValueCount> newValueCounts = new ArrayList<>();
         List<GeneExpressionValueCount> updateValueCounts = new ArrayList<>();
         List<GeneExpressionValueCount> updateLastModified = new ArrayList<>();
+        int totalNew = 0;
+        int totalUpdated = 0;
         // loop through terms and start getting counts and insert them
         for (Gene g : activeGenes){
             int geneRgdId = g.getRgdId();
+            logger.debug("\tCurrent Gene:"+g.getSymbol()+"|"+geneRgdId);
             terms.parallelStream().forEach( term -> {
 
                 try {
@@ -129,23 +132,40 @@ public class Main {
                     throw new RuntimeException(e);
                 }
             });
-
+            int total = newValueCounts.size()+updateValueCounts.size();
+            if (total > 20000) {
+                totalNew = totalNew+newValueCounts.size();
+                totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
+                insertValues(newValueCounts, updateValueCounts, updateLastModified);
+            }
+            logger.debug("\tEnd Gene:"+g.getSymbol()+"|"+geneRgdId);
         } // end gene for
-        if (!newValueCounts.isEmpty()){
-            logger.info("\t\tNew Counts for Expression Values: "+newValueCounts.size());
-                dao.insertGeneExprRecValCnt(newValueCounts);
-        }
-        if (!updateValueCounts.isEmpty()){
-            logger.info("\t\tValues being updated: "+updateValueCounts.size());
-                dao.updateGeneExprRecValCnts(updateValueCounts);
-        }
-        if (!updateLastModified.isEmpty()){
-            logger.info("\t\tCounts not changed: "+updateLastModified.size());
-                dao.updateLastModified(updateLastModified);
-        }
+        totalNew = totalNew+newValueCounts.size();
+        totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
+        insertValues(newValueCounts, updateValueCounts, updateLastModified);
         // get genes for species
+        logger.info("\tTotal new values: " + totalNew);
+        logger.info("\tTotal updated: " + totalUpdated);
         logger.info("\tExpression Value Count pipeline for species "+species.get(speciesTypeKey)+" runtime -- elapsed time: "+
                 Utils.formatElapsedTime(pipeStart,System.currentTimeMillis()));
+    }
+
+    void insertValues(List<GeneExpressionValueCount> newValueCounts, List<GeneExpressionValueCount> updateValueCounts, List<GeneExpressionValueCount> updateLastModified) throws Exception {
+        if (!newValueCounts.isEmpty()){
+            logger.debug("\t\tNew Counts for Expression Values: "+newValueCounts.size());
+            dao.insertGeneExprRecValCnt(newValueCounts);
+            newValueCounts.clear();
+        }
+        if (!updateValueCounts.isEmpty()){
+            logger.debug("\t\tValues being updated: "+updateValueCounts.size());
+            dao.updateGeneExprRecValCnts(updateValueCounts);
+            updateValueCounts.clear();
+        }
+        if (!updateLastModified.isEmpty()){
+            logger.debug("\t\tCounts not changed: "+updateLastModified.size());
+            dao.updateLastModified(updateLastModified);
+            updateLastModified.clear();
+        }
     }
     public void setVersion(String version) {
         this.version=version;
