@@ -2,6 +2,8 @@
  changed expression level to 'all' -- no longer computing 'below cutoff', 'low', 'medium', high'
  unchanged counts now count towards the periodic flush; previously they accumulated for a whole species
    because the flush only looked at the new and changed lists
+ counts are now computed by a single aggregate query per species and level, instead of one query per gene
+   per slim term; the per-gene loop, the parallel stream over terms and the JDBC retry are gone with it
 
 7/14/2025
  adding an update for the "Failed to obtain JDBC Connection" error that is causing a timeout, "Timeout waiting for idle object"

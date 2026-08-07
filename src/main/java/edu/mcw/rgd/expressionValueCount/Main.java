@@ -1,6 +1,5 @@
 package edu.mcw.rgd.expressionValueCount;
 
-import edu.mcw.rgd.datamodel.Gene;
 import edu.mcw.rgd.datamodel.pheno.GeneExpressionValueCount;
 import edu.mcw.rgd.process.Utils;
 import org.apache.logging.log4j.LogManager;
@@ -19,8 +18,12 @@ public class Main {
     protected Logger logger = LogManager.getLogger("status");
     private final DAO dao = new DAO();
 
-    /** rows buffered across genes before they are written out, so memory does not grow with the species */
+    /** rows buffered before they are written out, so memory does not grow with the species */
     private static final int FLUSH_THRESHOLD = 20000;
+
+    /** the slim the counts are grouped by; must match what the report pages query */
+    private static final String ONT_ID = "UBERON";
+    private static final String SLIM_SOURCE = "AGR";
 
 
     public static void main(String[] args) throws Exception {
@@ -65,85 +68,66 @@ public class Main {
         SimpleDateFormat sdt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         long pipeStart = System.currentTimeMillis();
         logger.info("\tPipeline started at "+sdt.format(new Date(pipeStart))+"\n");
-        List<String> terms = dao.getAllSlimTerms("UBERON","AGR");
         logger.info("\t\tRunning for species "+species.get(speciesTypeKey)+"...");
-        List<Gene> activeGenes = dao.getActiveGenes(speciesTypeKey);
-        List<GeneExpressionValueCount> newValueCounts = new ArrayList<>();
-        List<GeneExpressionValueCount> updateValueCounts = new ArrayList<>();
-        List<GeneExpressionValueCount> updateLastModified = new ArrayList<>();
+
         int totalNew = 0;
         int totalUpdated = 0;
-        // loop through terms and start getting counts and insert them
-        for (Gene g : activeGenes){
-            int geneRgdId = g.getRgdId();
-            logger.debug("\tCurrent Gene:"+g.getSymbol()+"|"+geneRgdId);
-            terms.parallelStream().forEach( term -> {
 
-                try {
-                    for (String level : expressionLevels) {
-                        // check if row exists, if yes, update value and last modified
-                        // else create row and add to list
-                        int cnt = 0;
-                        int attempt=0;
-                        while( attempt < 5) {
-                            try {
-                                switch (level) {
-                                    case "below cutoff", "low", "medium", "high" -> cnt = dao.getGeneExprRecordValuesCountForGeneBySlim(geneRgdId, term, "TPM", level);
-                                    case "all" -> cnt = dao.getGeneExprRecordValuesCountForGene(geneRgdId, term, "TPM");
-                                }
-                                break;
-                            } catch (org.springframework.jdbc.CannotGetJdbcConnectionException exception) {
-                                logger.warn(geneRgdId+"|"+term+"|TPM|"+level);
-                                logger.warn(exception.getMessage());
-                                Thread.sleep(5000);
-                                attempt++;
-                                if (attempt==5){
-                                    throw exception;
-                                }
-                            }
-                        }
+        for (String level : expressionLevels) {
 
-                        if (cnt == 0)
-                            continue;
-                        GeneExpressionValueCount gvc = dao.getValueCountsByGeneRgdIdTermUnitAndLevel(geneRgdId, term, "TPM", level);
+            // One aggregate for the whole species, rather than a count query per gene per slim
+            // term. The old shape issued roughly 29 million round trips for a full run, which is
+            // what made it take hours and what exhausted the connection pool; the retry loop that
+            // used to sit here was treating that symptom and is no longer needed.
+            long queryStart = System.currentTimeMillis();
+            Map<String,Integer> computed = dao.getComputedCounts(speciesTypeKey, ONT_ID, SLIM_SOURCE, "TPM", level);
+            logger.info("\t\t"+level+": counted "+computed.size()+" gene/term pairs in "
+                    +Utils.formatElapsedTime(queryStart, System.currentTimeMillis()));
 
-                        synchronized (dao) {
-                            if (gvc == null) {
-                                gvc = new GeneExpressionValueCount();
-                                gvc.setValueCnt(cnt);
-                                gvc.setExpressedRgdId(geneRgdId);
-                                gvc.setTermAcc(term);
-                                gvc.setUnit("TPM");
-                                gvc.setLevel(level);
-                                newValueCounts.add(gvc);
-                            } else if (gvc.getValueCnt() != cnt) {
-                                gvc.setValueCnt(cnt);
-                                updateValueCounts.add(gvc);
-                            } else {
-                                updateLastModified.add(gvc);
-                            }
-                        }
-                    }
-                }catch (Exception e){
-                    throw new RuntimeException(e);
+            Map<String,Integer> stored = dao.getStoredCounts(speciesTypeKey, "TPM", level);
+            logger.info("\t\t"+level+": "+stored.size()+" rows already stored");
+
+            List<GeneExpressionValueCount> newValueCounts = new ArrayList<>();
+            List<GeneExpressionValueCount> updateValueCounts = new ArrayList<>();
+            List<GeneExpressionValueCount> updateLastModified = new ArrayList<>();
+
+            for (Map.Entry<String,Integer> entry : computed.entrySet()) {
+                String key = entry.getKey();
+                int cnt = entry.getValue();
+                int sep = key.indexOf('|');
+
+                GeneExpressionValueCount gvc = new GeneExpressionValueCount();
+                gvc.setValueCnt(cnt);
+                gvc.setExpressedRgdId(Integer.parseInt(key.substring(0, sep)));
+                gvc.setTermAcc(key.substring(sep+1));
+                gvc.setUnit("TPM");
+                gvc.setLevel(level);
+
+                // a pair the aggregate did not return has no values at all, and is skipped here just
+                // as the old code skipped a count of zero
+                Integer storedCnt = stored.get(key);
+                if (storedCnt == null) {
+                    newValueCounts.add(gvc);
+                } else if (storedCnt != cnt) {
+                    updateValueCounts.add(gvc);
+                } else {
+                    updateLastModified.add(gvc);
                 }
-            });
-            // all three lists have to count towards the flush, not just the first two. On a re-run
-            // almost every count is unchanged, so the rows pile up in updateLastModified while
-            // newValueCounts and updateValueCounts stay near empty -- leaving out the third list
-            // meant the flush never fired and the whole species was held in memory anyway.
-            int total = newValueCounts.size()+updateValueCounts.size()+updateLastModified.size();
-            if (total > FLUSH_THRESHOLD) {
-                totalNew = totalNew+newValueCounts.size();
-                totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
-                insertValues(newValueCounts, updateValueCounts, updateLastModified);
+
+                // all three lists count towards the flush: on a re-run almost every count is
+                // unchanged, so leaving out updateLastModified would mean the flush never fired
+                int total = newValueCounts.size()+updateValueCounts.size()+updateLastModified.size();
+                if (total > FLUSH_THRESHOLD) {
+                    totalNew = totalNew+newValueCounts.size();
+                    totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
+                    insertValues(newValueCounts, updateValueCounts, updateLastModified);
+                }
             }
-            logger.debug("\tEnd Gene:"+g.getSymbol()+"|"+geneRgdId);
-        } // end gene for
-        totalNew = totalNew+newValueCounts.size();
-        totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
-        insertValues(newValueCounts, updateValueCounts, updateLastModified);
-        // get genes for species
+            totalNew = totalNew+newValueCounts.size();
+            totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
+            insertValues(newValueCounts, updateValueCounts, updateLastModified);
+        }
+
         logger.info("\tTotal new values: " + totalNew);
         logger.info("\tTotal updated: " + totalUpdated);
         logger.info("\tExpression Value Count pipeline for species "+species.get(speciesTypeKey)+" runtime -- elapsed time: "+
