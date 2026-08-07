@@ -104,6 +104,8 @@ public class Main {
         long pipeStart = System.currentTimeMillis();
         logger.info("\t\tRunning for species "+species.get(speciesTypeKey)+"...");
 
+        String speciesName = Utils.defaultString(species.get(speciesTypeKey)).toLowerCase();
+
         int speciesCorrected = 0;
         int speciesInserted = 0;
         int speciesDeleted = 0;
@@ -145,11 +147,10 @@ public class Main {
                 // as the old code skipped a count of zero
                 Integer storedCnt = stored.get(key);
                 if (storedCnt == null) {
-                    logInserted.info(gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()+"|TPM|"+level+"  count "+cnt);
+                    logInserted.info(rowId(speciesName, gvc)+"  count "+cnt);
                     newValueCounts.add(gvc);
                 } else if (storedCnt != cnt) {
-                    logCorrected.info(gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()+"|TPM|"+level
-                            +"  "+storedCnt+" -> "+cnt);
+                    logCorrected.info(rowId(speciesName, gvc)+"  "+storedCnt+" -> "+cnt);
                     updateValueCounts.add(gvc);
                 } else {
                     updateLastModified.add(gvc);
@@ -170,7 +171,7 @@ public class Main {
             unchanged += updateLastModified.size();
             insertValues(newValueCounts, updateValueCounts, updateLastModified);
 
-            int deleted = deleteObsolete(computed, stored, level);
+            int deleted = deleteObsolete(computed, stored, level, speciesName);
 
             logger.info("\t\t"+level+": "+Utils.formatThousands(computed.size())+" pairs counted in "+queryTime
                     +" ("+Utils.formatThousands(stored.size())+" already stored)");
@@ -198,6 +199,12 @@ public class Main {
         speciesProcessed++;
     }
 
+    /** identifies one counted row in the detail logs, f.e. 'rat|RGD:2241|UBERON:0002204|TPM|all' */
+    static String rowId(String speciesName, GeneExpressionValueCount gvc) {
+        return speciesName+"|RGD:"+gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()
+                +"|"+gvc.getUnit()+"|"+gvc.getLevel();
+    }
+
     /**
      * Removes rows the aggregate no longer produces: a (gene, term) pair that once had expression
      * values and now has none. Nothing else ever visits such a row -- it is not returned by the
@@ -210,7 +217,8 @@ public class Main {
      * wrong species, a partial failure -- every stored row would look obsolete and the whole table
      * would be deleted. Above the limit the run reports and deletes nothing.
      */
-    int deleteObsolete(Map<String,Integer> computed, Map<String,Integer> stored, String level) throws Exception {
+    int deleteObsolete(Map<String,Integer> computed, Map<String,Integer> stored, String level,
+                       String speciesName) throws Exception {
 
         List<GeneExpressionValueCount> obsolete = new ArrayList<>();
         for (Map.Entry<String,Integer> entry : stored.entrySet()) {
@@ -239,8 +247,7 @@ public class Main {
         }
 
         for (GeneExpressionValueCount gvc : obsolete) {
-            logDeleted.info(gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()+"|TPM|"+level
-                    +"  had count "+gvc.getValueCnt()+", no values remain");
+            logDeleted.info(rowId(speciesName, gvc)+"  had count "+gvc.getValueCnt()+", no values remain");
         }
         return dao.deleteValueCounts(obsolete);
     }
