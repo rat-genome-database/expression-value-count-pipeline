@@ -13,12 +13,12 @@
             </map>
         </property>
         <property name="expressionLevels">
-            <list>
+            <list><!--
                 <value>below cutoff</value>
                 <value>low</value>
                 <value>medium</value>
-                <value>high</value>
-<!--                <value>all</value>-->
+                <value>high</value>-->
+                <value>all</value>
             </list>
         </property>
     </bean>
