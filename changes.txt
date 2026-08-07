@@ -4,6 +4,7 @@
    because the flush only looked at the new and changed lists
  counts are now computed by a single aggregate query per species and level, instead of one query per gene
    per slim term; the per-gene loop, the parallel stream over terms and the JDBC retry are gone with it
+ added memory usage monitoring; updated rgdcore
 
 7/14/2025
  adding an update for the "Failed to obtain JDBC Connection" error that is causing a timeout, "Timeout waiting for idle object"

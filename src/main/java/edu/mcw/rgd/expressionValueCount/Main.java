@@ -1,6 +1,7 @@
 package edu.mcw.rgd.expressionValueCount;
 
 import edu.mcw.rgd.datamodel.pheno.GeneExpressionValueCount;
+import edu.mcw.rgd.process.MemoryMonitor;
 import edu.mcw.rgd.process.Utils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -29,6 +30,12 @@ public class Main {
     public static void main(String[] args) throws Exception {
         DefaultListableBeanFactory bf = new DefaultListableBeanFactory();
         new XmlBeanDefinitionReader(bf).loadBeanDefinitions(new FileSystemResource("properties/AppConfigure.xml"));
+
+        // spans the whole run, so -runForAll reports the peak across every species. Reported from a
+        // finally block because this pipeline holds the computed and stored counts in memory, and a
+        // run that dies is exactly when the figures are worth having.
+        MemoryMonitor memoryMonitor = new MemoryMonitor();
+        memoryMonitor.start();
         try {
             Main main = (Main) bf.getBean("main");
             main.run(args);
@@ -36,6 +43,10 @@ public class Main {
         catch (Exception e) {
             Utils.printStackTrace(e, LogManager.getLogger("status"));
             throw e;
+        }
+        finally {
+            memoryMonitor.stop();
+            LogManager.getLogger("status").info(memoryMonitor.getSummary());
         }
     }
 
