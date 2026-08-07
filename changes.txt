@@ -5,6 +5,8 @@
  counts are now computed by a single aggregate query per species and level, instead of one query per gene
    per slim term; the per-gene loop, the parallel stream over terms and the JDBC retry are gone with it
  added memory usage monitoring; updated rgdcore
+ summary now reports counts corrected (stored value disagreed with the recomputed one) separately from
+   counts merely touched, per level and per species, with a single run-level block at the end
 
 7/14/2025
  adding an update for the "Failed to obtain JDBC Connection" error that is causing a timeout, "Timeout waiting for idle object"

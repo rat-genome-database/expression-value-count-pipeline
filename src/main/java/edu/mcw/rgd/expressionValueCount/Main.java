@@ -26,6 +26,15 @@ public class Main {
     private static final String ONT_ID = "UBERON";
     private static final String SLIM_SOURCE = "AGR";
 
+    // run-wide totals, accumulated across every species and level, reported once at the end.
+    // 'corrected' is the one worth watching: it is the number of stored counts that disagreed with
+    // the recomputed value, so it says how wrong the report pages were before this run. Zero means
+    // they were already right; a spike means the data drifted or the pipeline had not been run.
+    private int runCorrected = 0;
+    private int runInserted = 0;
+    private int runUnchanged = 0;
+    private int speciesProcessed = 0;
+
 
     public static void main(String[] args) throws Exception {
         DefaultListableBeanFactory bf = new DefaultListableBeanFactory();
@@ -51,6 +60,12 @@ public class Main {
     }
 
     void run(String[] args) throws Exception {
+        // banner once per run, not once per species
+        logger.info(getVersion());
+        long runStart = System.currentTimeMillis();
+        logger.info("\tPipeline started at "
+                +new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(runStart))+"\n");
+
         int speciesTypeKey = 3;
         for (int i = 0; i < args.length; i++) {
             speciesTypeKey = switch (args[i]) {
@@ -71,18 +86,17 @@ public class Main {
         }
         else
             generateValueCounts(speciesTypeKey);
-        return;
+
+        logRunSummary(runStart);
     }
 
     public void generateValueCounts(int speciesTypeKey) throws Exception {
-        logger.info(getVersion());
-        SimpleDateFormat sdt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         long pipeStart = System.currentTimeMillis();
-        logger.info("\tPipeline started at "+sdt.format(new Date(pipeStart))+"\n");
         logger.info("\t\tRunning for species "+species.get(speciesTypeKey)+"...");
 
-        int totalNew = 0;
-        int totalUpdated = 0;
+        int speciesCorrected = 0;
+        int speciesInserted = 0;
+        int speciesUnchanged = 0;
 
         for (String level : expressionLevels) {
 
@@ -92,11 +106,13 @@ public class Main {
             // used to sit here was treating that symptom and is no longer needed.
             long queryStart = System.currentTimeMillis();
             Map<String,Integer> computed = dao.getComputedCounts(speciesTypeKey, ONT_ID, SLIM_SOURCE, "TPM", level);
-            logger.info("\t\t"+level+": counted "+computed.size()+" gene/term pairs in "
-                    +Utils.formatElapsedTime(queryStart, System.currentTimeMillis()));
+            String queryTime = Utils.formatElapsedTime(queryStart, System.currentTimeMillis());
 
             Map<String,Integer> stored = dao.getStoredCounts(speciesTypeKey, "TPM", level);
-            logger.info("\t\t"+level+": "+stored.size()+" rows already stored");
+
+            int corrected = 0;
+            int inserted = 0;
+            int unchanged = 0;
 
             List<GeneExpressionValueCount> newValueCounts = new ArrayList<>();
             List<GeneExpressionValueCount> updateValueCounts = new ArrayList<>();
@@ -129,20 +145,54 @@ public class Main {
                 // unchanged, so leaving out updateLastModified would mean the flush never fired
                 int total = newValueCounts.size()+updateValueCounts.size()+updateLastModified.size();
                 if (total > FLUSH_THRESHOLD) {
-                    totalNew = totalNew+newValueCounts.size();
-                    totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
+                    inserted += newValueCounts.size();
+                    corrected += updateValueCounts.size();
+                    unchanged += updateLastModified.size();
                     insertValues(newValueCounts, updateValueCounts, updateLastModified);
                 }
             }
-            totalNew = totalNew+newValueCounts.size();
-            totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
+            inserted += newValueCounts.size();
+            corrected += updateValueCounts.size();
+            unchanged += updateLastModified.size();
             insertValues(newValueCounts, updateValueCounts, updateLastModified);
+
+            logger.info("\t\t"+level+": "+Utils.formatThousands(computed.size())+" pairs counted in "+queryTime
+                    +" ("+Utils.formatThousands(stored.size())+" already stored)");
+            logger.info("\t\t"+level+": corrected "+Utils.formatThousands(corrected)
+                    +", inserted "+Utils.formatThousands(inserted)
+                    +", unchanged "+Utils.formatThousands(unchanged));
+
+            speciesCorrected += corrected;
+            speciesInserted += inserted;
+            speciesUnchanged += unchanged;
         }
 
-        logger.info("\tTotal new values: " + totalNew);
-        logger.info("\tTotal updated: " + totalUpdated);
-        logger.info("\tExpression Value Count pipeline for species "+species.get(speciesTypeKey)+" runtime -- elapsed time: "+
-                Utils.formatElapsedTime(pipeStart,System.currentTimeMillis()));
+        logger.info("\t"+species.get(speciesTypeKey)+": corrected "+Utils.formatThousands(speciesCorrected)
+                +", inserted "+Utils.formatThousands(speciesInserted)
+                +", unchanged "+Utils.formatThousands(speciesUnchanged)
+                +" -- elapsed "+Utils.formatElapsedTime(pipeStart,System.currentTimeMillis()));
+
+        runCorrected += speciesCorrected;
+        runInserted += speciesInserted;
+        runUnchanged += speciesUnchanged;
+        speciesProcessed++;
+    }
+
+    /**
+     * The end-of-run block. 'corrected' leads because it is the only figure that varies
+     * meaningfully between runs: it counts stored values that disagreed with the recomputed ones,
+     * so it says how wrong the report pages were before this run. Everything else stays roughly
+     * constant and is context.
+     */
+    void logRunSummary(long runStart) {
+        logger.info("");
+        logger.info("=== EXPRESSION VALUE COUNTS ===");
+        logger.info("  COUNTS CORRECTED: "+Utils.formatThousands(runCorrected)
+                +"   (stored value disagreed with the recomputed value)");
+        logger.info("          inserted: "+Utils.formatThousands(runInserted));
+        logger.info("         unchanged: "+Utils.formatThousands(runUnchanged));
+        logger.info("    species/levels: "+speciesProcessed+" / "+expressionLevels.size());
+        logger.info("          run time: "+Utils.formatElapsedTime(runStart, System.currentTimeMillis()));
     }
 
     void insertValues(List<GeneExpressionValueCount> newValueCounts, List<GeneExpressionValueCount> updateValueCounts, List<GeneExpressionValueCount> updateLastModified) throws Exception {
