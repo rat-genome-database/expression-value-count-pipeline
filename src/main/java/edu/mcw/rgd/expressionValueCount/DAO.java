@@ -5,10 +5,13 @@ import edu.mcw.rgd.dao.impl.*;
 import edu.mcw.rgd.datamodel.*;
 import edu.mcw.rgd.datamodel.pheno.GeneExpressionValueCount;
 
+import org.springframework.jdbc.object.BatchSqlUpdate;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -61,6 +64,30 @@ public class DAO {
 
     public int updateLastModified(List<GeneExpressionValueCount> cnts) throws Exception{
         return gedao.UpdateGeneExpressionValueLastModifiedBatch(cnts);
+    }
+
+    /**
+     * Removes rows whose (gene, term) pair no longer has any expression values. Keyed the same way
+     * the batch update methods are, on (rgd id, term, unit, level), since the table has no surrogate
+     * key of its own.
+     */
+    public int deleteValueCounts(List<GeneExpressionValueCount> obsolete) throws Exception {
+
+        BatchSqlUpdate su = new BatchSqlUpdate(DataSourceFactory.getInstance().getDataSource(),
+                "DELETE FROM gene_expression_value_counts WHERE expressed_object_rgd_id=? AND term_acc=? "
+                        +"AND expression_unit=? AND expression_level=?",
+                new int[]{Types.INTEGER, Types.VARCHAR, Types.VARCHAR, Types.VARCHAR}, 10000);
+        su.compile();
+        for( GeneExpressionValueCount vc: obsolete ) {
+            su.update(vc.getExpressedRgdId(), vc.getTermAcc(), vc.getUnit(), vc.getLevel());
+        }
+        su.flush();
+
+        int rowsDeleted = 0;
+        for( int rows: su.getRowsAffected() ) {
+            rowsDeleted += rows;
+        }
+        return rowsDeleted;
     }
 
     /** key used to line up computed counts against the counts already stored */

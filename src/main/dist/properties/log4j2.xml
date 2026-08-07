@@ -20,6 +20,26 @@
         <File name="summary" append="false" fileName="logs/summary.log">
             <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
         </File>
+
+        <!-- one file per kind of change, so the rows that moved can be reviewed row by row -->
+        <RollingFile name="inserted" append="true" fileName="logs/inserted.log" filePattern="logs/inserted.log.%d{yyyy-MM}">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} - %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+        </RollingFile>
+        <RollingFile name="corrected" append="true" fileName="logs/corrected.log" filePattern="logs/corrected.log.%d{yyyy-MM}">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} - %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+        </RollingFile>
+        <RollingFile name="deleted" append="true" fileName="logs/deleted.log" filePattern="logs/deleted.log.%d{yyyy-MM}">
+            <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} - %m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1"/>
+            </Policies>
+        </RollingFile>
     </Appenders>
 
     <Loggers>
@@ -31,6 +51,15 @@
             <AppenderRef ref="status" level="info"/>
             <AppenderRef ref="summary" level="info"/>
             <AppenderRef ref="Console" level="info"/>
+        </Logger>
+        <Logger name="inserted" level="info" additivity="false">
+            <AppenderRef ref="inserted"/>
+        </Logger>
+        <Logger name="corrected" level="info" additivity="false">
+            <AppenderRef ref="corrected"/>
+        </Logger>
+        <Logger name="deleted" level="info" additivity="false">
+            <AppenderRef ref="deleted"/>
         </Logger>
     </Loggers>
 </Configuration>

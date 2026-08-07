@@ -17,6 +17,12 @@ public class Main {
     private Map<Integer,String> species;
     private List<String> expressionLevels;
     protected Logger logger = LogManager.getLogger("status");
+
+    // one file per kind of change, so a curator can see exactly which rows moved
+    private final Logger logInserted = LogManager.getLogger("inserted");
+    private final Logger logCorrected = LogManager.getLogger("corrected");
+    private final Logger logDeleted = LogManager.getLogger("deleted");
+
     private final DAO dao = new DAO();
 
     /** rows buffered before they are written out, so memory does not grow with the species */
@@ -32,8 +38,12 @@ public class Main {
     // they were already right; a spike means the data drifted or the pipeline had not been run.
     private int runCorrected = 0;
     private int runInserted = 0;
+    private int runDeleted = 0;
     private int runUnchanged = 0;
     private int speciesProcessed = 0;
+
+    /** refuse to delete more than this share of a species' stored rows; see deleteObsolete() */
+    private double deleteThresholdPercent = 5.0;
 
 
     public static void main(String[] args) throws Exception {
@@ -96,6 +106,7 @@ public class Main {
 
         int speciesCorrected = 0;
         int speciesInserted = 0;
+        int speciesDeleted = 0;
         int speciesUnchanged = 0;
 
         for (String level : expressionLevels) {
@@ -134,8 +145,11 @@ public class Main {
                 // as the old code skipped a count of zero
                 Integer storedCnt = stored.get(key);
                 if (storedCnt == null) {
+                    logInserted.info(gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()+"|TPM|"+level+"  count "+cnt);
                     newValueCounts.add(gvc);
                 } else if (storedCnt != cnt) {
+                    logCorrected.info(gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()+"|TPM|"+level
+                            +"  "+storedCnt+" -> "+cnt);
                     updateValueCounts.add(gvc);
                 } else {
                     updateLastModified.add(gvc);
@@ -156,26 +170,79 @@ public class Main {
             unchanged += updateLastModified.size();
             insertValues(newValueCounts, updateValueCounts, updateLastModified);
 
+            int deleted = deleteObsolete(computed, stored, level);
+
             logger.info("\t\t"+level+": "+Utils.formatThousands(computed.size())+" pairs counted in "+queryTime
                     +" ("+Utils.formatThousands(stored.size())+" already stored)");
             logger.info("\t\t"+level+": corrected "+Utils.formatThousands(corrected)
                     +", inserted "+Utils.formatThousands(inserted)
+                    +", deleted "+Utils.formatThousands(deleted)
                     +", unchanged "+Utils.formatThousands(unchanged));
 
             speciesCorrected += corrected;
             speciesInserted += inserted;
+            speciesDeleted += deleted;
             speciesUnchanged += unchanged;
         }
 
         logger.info("\t"+species.get(speciesTypeKey)+": corrected "+Utils.formatThousands(speciesCorrected)
                 +", inserted "+Utils.formatThousands(speciesInserted)
+                +", deleted "+Utils.formatThousands(speciesDeleted)
                 +", unchanged "+Utils.formatThousands(speciesUnchanged)
                 +" -- elapsed "+Utils.formatElapsedTime(pipeStart,System.currentTimeMillis()));
 
         runCorrected += speciesCorrected;
         runInserted += speciesInserted;
+        runDeleted += speciesDeleted;
         runUnchanged += speciesUnchanged;
         speciesProcessed++;
+    }
+
+    /**
+     * Removes rows the aggregate no longer produces: a (gene, term) pair that once had expression
+     * values and now has none. Nothing else ever visits such a row -- it is not returned by the
+     * aggregate, so it is never re-counted -- and it keeps its old count indefinitely while the
+     * report pages go on serving it. On dev, rat had 2,100 of these, untouched since January, some
+     * on ordinary curated genes: Ca3 showed a count of 11 for musculoskeletal system against no
+     * values at all.
+     * <p>
+     * Guarded by a share-of-table limit. If the aggregate ever came back short -- a query change, a
+     * wrong species, a partial failure -- every stored row would look obsolete and the whole table
+     * would be deleted. Above the limit the run reports and deletes nothing.
+     */
+    int deleteObsolete(Map<String,Integer> computed, Map<String,Integer> stored, String level) throws Exception {
+
+        List<GeneExpressionValueCount> obsolete = new ArrayList<>();
+        for (Map.Entry<String,Integer> entry : stored.entrySet()) {
+            if (!computed.containsKey(entry.getKey())) {
+                String key = entry.getKey();
+                int sep = key.indexOf('|');
+                GeneExpressionValueCount gvc = new GeneExpressionValueCount();
+                gvc.setExpressedRgdId(Integer.parseInt(key.substring(0, sep)));
+                gvc.setTermAcc(key.substring(sep+1));
+                gvc.setUnit("TPM");
+                gvc.setLevel(level);
+                gvc.setValueCnt(entry.getValue());
+                obsolete.add(gvc);
+            }
+        }
+        if (obsolete.isEmpty()) {
+            return 0;
+        }
+
+        double share = (100.0*obsolete.size())/stored.size();
+        if (share > getDeleteThresholdPercent()) {
+            logger.warn("\t\t"+level+": "+Utils.formatThousands(obsolete.size())+" rows ("
+                    +String.format("%.1f", share)+"% of those stored) have no values left, which is above the "
+                    +getDeleteThresholdPercent()+"% limit -- NOTHING DELETED");
+            return 0;
+        }
+
+        for (GeneExpressionValueCount gvc : obsolete) {
+            logDeleted.info(gvc.getExpressedRgdId()+"|"+gvc.getTermAcc()+"|TPM|"+level
+                    +"  had count "+gvc.getValueCnt()+", no values remain");
+        }
+        return dao.deleteValueCounts(obsolete);
     }
 
     /**
@@ -190,6 +257,8 @@ public class Main {
         logger.info("  COUNTS CORRECTED: "+Utils.formatThousands(runCorrected)
                 +"   (stored value disagreed with the recomputed value)");
         logger.info("          inserted: "+Utils.formatThousands(runInserted));
+        logger.info("           deleted: "+Utils.formatThousands(runDeleted)
+                +"   (pair no longer has any expression values)");
         logger.info("         unchanged: "+Utils.formatThousands(runUnchanged));
         logger.info("    species/levels: "+speciesProcessed+" / "+expressionLevels.size());
         logger.info("          run time: "+Utils.formatElapsedTime(runStart, System.currentTimeMillis()));
@@ -226,6 +295,14 @@ public class Main {
 
     public Map<Integer,String> getSpecies(){
         return species;
+    }
+
+    public void setDeleteThresholdPercent(double deleteThresholdPercent) {
+        this.deleteThresholdPercent = deleteThresholdPercent;
+    }
+
+    public double getDeleteThresholdPercent() {
+        return deleteThresholdPercent;
     }
 
     public void setExpressionLevels(List<String> expressionLevels) {

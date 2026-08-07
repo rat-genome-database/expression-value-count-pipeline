@@ -7,6 +7,9 @@
  added memory usage monitoring; updated rgdcore
  summary now reports counts corrected (stored value disagreed with the recomputed one) separately from
    counts merely touched, per level and per species, with a single run-level block at the end
+ rows whose gene/term pair no longer has any expression values are now deleted instead of keeping their old
+   count forever; guarded by deleteThresholdPercent (default 5%) so a short aggregate cannot empty the table
+ added inserted.log, corrected.log and deleted.log listing the rows affected
 
 7/14/2025
  adding an update for the "Failed to obtain JDBC Connection" error that is causing a timeout, "Timeout waiting for idle object"

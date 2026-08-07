@@ -12,6 +12,10 @@
                 <entry key="13" value="Green Monkey"/>
             </map>
         </property>
+        <!-- safety limit on removing rows whose gene/term pair no longer has any expression values:
+             if more than this share of a species' stored rows look obsolete, the run reports them
+             and deletes nothing. Measured on dev, rat sits at 0.25%. -->
+        <property name="deleteThresholdPercent" value="5.0"/>
         <property name="expressionLevels">
             <list><!--
                 <value>below cutoff</value>
