@@ -1,5 +1,6 @@
 package edu.mcw.rgd.expressionValueCount;
 
+import edu.mcw.rgd.datamodel.SpeciesType;
 import edu.mcw.rgd.datamodel.pheno.GeneExpressionValueCount;
 import edu.mcw.rgd.process.MemoryMonitor;
 import edu.mcw.rgd.process.Utils;
@@ -104,7 +105,10 @@ public class Main {
         long pipeStart = System.currentTimeMillis();
         logger.info("\t\tRunning for species "+species.get(speciesTypeKey)+"...");
 
-        String speciesName = Utils.defaultString(species.get(speciesTypeKey)).toLowerCase();
+        // short name rather than the common name: it is already lower case and never contains a
+        // space, so the pipe-separated detail log lines stay one token per field
+        // ('vervet', not 'green monkey')
+        String speciesName = Utils.defaultString(SpeciesType.getShortName(speciesTypeKey));
 
         int speciesCorrected = 0;
         int speciesInserted = 0;
