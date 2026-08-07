@@ -1,7 +1,7 @@
 <!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN//EN" "http://www.springframework.org/dtd/spring-beans.dtd">
 <beans>
     <bean id="main" class="edu.mcw.rgd.expressionValueCount.Main">
-        <property name="version" value="Calculate Gene Expression Value Counts -- build 10/04/2024"/>
+        <property name="version" value="Calculate Gene Expression Value Counts -- build 08/07/2026"/>
         <property name="species">
             <map>
                 <entry key="1" value="Human"/>

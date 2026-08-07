@@ -1,12 +1,7 @@
 package edu.mcw.rgd.expressionValueCount;
 
-import edu.mcw.rgd.dao.DataSourceFactory;
 import edu.mcw.rgd.datamodel.Gene;
-import edu.mcw.rgd.datamodel.RgdId;
-import edu.mcw.rgd.datamodel.SpeciesType;
 import edu.mcw.rgd.datamodel.pheno.GeneExpressionValueCount;
-import edu.mcw.rgd.datamodel.variants.VariantMapData;
-import edu.mcw.rgd.datamodel.variants.VariantSampleDetail;
 import edu.mcw.rgd.process.Utils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -14,10 +9,8 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
 import org.springframework.core.io.FileSystemResource;
 
-import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.zip.GZIPInputStream;
 
 public class Main {
     private String version;
@@ -25,6 +18,9 @@ public class Main {
     private List<String> expressionLevels;
     protected Logger logger = LogManager.getLogger("status");
     private final DAO dao = new DAO();
+
+    /** rows buffered across genes before they are written out, so memory does not grow with the species */
+    private static final int FLUSH_THRESHOLD = 20000;
 
 
     public static void main(String[] args) throws Exception {
@@ -132,8 +128,12 @@ public class Main {
                     throw new RuntimeException(e);
                 }
             });
-            int total = newValueCounts.size()+updateValueCounts.size();
-            if (total > 20000) {
+            // all three lists have to count towards the flush, not just the first two. On a re-run
+            // almost every count is unchanged, so the rows pile up in updateLastModified while
+            // newValueCounts and updateValueCounts stay near empty -- leaving out the third list
+            // meant the flush never fired and the whole species was held in memory anyway.
+            int total = newValueCounts.size()+updateValueCounts.size()+updateLastModified.size();
+            if (total > FLUSH_THRESHOLD) {
                 totalNew = totalNew+newValueCounts.size();
                 totalUpdated = totalUpdated+updateLastModified.size()+updateValueCounts.size();
                 insertValues(newValueCounts, updateValueCounts, updateLastModified);

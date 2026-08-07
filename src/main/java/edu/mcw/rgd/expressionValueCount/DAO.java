@@ -2,21 +2,10 @@ package edu.mcw.rgd.expressionValueCount;
 
 import edu.mcw.rgd.dao.DataSourceFactory;
 import edu.mcw.rgd.dao.impl.*;
-import edu.mcw.rgd.dao.impl.variants.VariantDAO;
-import edu.mcw.rgd.dao.spring.variants.VariantSampleQuery;
 import edu.mcw.rgd.datamodel.*;
 import edu.mcw.rgd.datamodel.pheno.GeneExpressionValueCount;
-import edu.mcw.rgd.datamodel.variants.VariantMapData;
-import edu.mcw.rgd.datamodel.variants.VariantSampleDetail;
-import org.springframework.jdbc.core.SqlParameter;
-import org.springframework.jdbc.object.BatchSqlUpdate;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Types;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
