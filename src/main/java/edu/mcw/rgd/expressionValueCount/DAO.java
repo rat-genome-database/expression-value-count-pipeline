@@ -107,8 +107,9 @@ public class DAO {
      * getGeneExprRecordValuesCountForGeneBySlim (used for the individual levels) counts descendants
      * only. Neither filters on ont_rel_id or map_key, so neither does this.
      * <p>
-     * The DISTINCT on the hierarchy matters: a descendant is reachable from a slim term by many
-     * paths, and without it every count would be multiplied by the number of paths.
+     * The UNION in the recursive walk matters: a descendant is reachable from a slim term by many
+     * paths, and without that dedupe every count would be multiplied by the number of paths. It
+     * also bounds the recursion if ont_dag ever contains a cycle.
      *
      * @return computed counts keyed by {@link #countKey}
      */
@@ -119,19 +120,26 @@ public class DAO {
         List<Object> params = new ArrayList<>();
 
         StringBuilder sql = new StringBuilder("""
-            WITH slim_map AS (
-                SELECT DISTINCT CONNECT_BY_ROOT parent_term_acc AS slim_acc, child_term_acc AS descendant_acc
-                FROM ont_dag
-                START WITH parent_term_acc IN (SELECT term_acc FROM ont_slims WHERE ont_id=? AND source=?)
-                CONNECT BY PRIOR child_term_acc = parent_term_acc
+            WITH RECURSIVE slim_roots AS (
+                SELECT term_acc FROM ont_slims WHERE ont_id=? AND source=?
+            ),
+            slim_dag(slim_acc, descendant_acc) AS (
+                SELECT r.term_acc, d.child_term_acc
+                FROM ont_dag d
+                JOIN slim_roots r ON d.parent_term_acc = r.term_acc
+                UNION
+                SELECT sd.slim_acc, d.child_term_acc
+                FROM ont_dag d
+                JOIN slim_dag sd ON d.parent_term_acc = sd.descendant_acc
+            ),
+            slim_map(slim_acc, descendant_acc) AS (
+                SELECT slim_acc, descendant_acc FROM slim_dag
             """);
         params.add(ontId);
         params.add(slimSource);
 
         if( allLevels ) {
-            sql.append("    UNION SELECT term_acc, term_acc FROM ont_slims WHERE ont_id=? AND source=?\n");
-            params.add(ontId);
-            params.add(slimSource);
+            sql.append("    UNION SELECT term_acc, term_acc FROM slim_roots\n");
         }
 
         sql.append("""
@@ -160,6 +168,10 @@ public class DAO {
         try( Connection conn = DataSourceFactory.getInstance().getDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql.toString()) ) {
 
+            // postgres only honors the fetch size on a cursor, which needs autocommit off;
+            // otherwise the whole result set is pulled into the heap at once
+            conn.setAutoCommit(false);
+
             for( int i=0; i<params.size(); i++ ) {
                 ps.setObject(i+1, params.get(i));
             }
@@ -169,6 +181,7 @@ public class DAO {
                     counts.put(countKey(rs.getInt(1), rs.getString(2)), rs.getInt(3));
                 }
             }
+            conn.commit();
         }
         return counts;
     }
@@ -188,6 +201,9 @@ public class DAO {
         try( Connection conn = DataSourceFactory.getInstance().getDataSource().getConnection();
              PreparedStatement ps = conn.prepareStatement(sql) ) {
 
+            // see getComputedCounts: the fetch size only streams with autocommit off
+            conn.setAutoCommit(false);
+
             ps.setInt(1, speciesTypeKey);
             ps.setString(2, unit);
             ps.setString(3, level);
@@ -197,6 +213,7 @@ public class DAO {
                     counts.put(countKey(rs.getInt(1), rs.getString(2)), rs.getInt(3));
                 }
             }
+            conn.commit();
         }
         return counts;
     }
